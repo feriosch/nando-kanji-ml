@@ -44,14 +44,16 @@ Unzip it so that `data/ETL9G/` holds `ETL9G_01` to `ETL9G_50`. Each file holds 4
 python -m kanji_ml.dataset
 ```
 
-This takes about a minute and writes three files to `data/prepared/`:
+This takes about 3 minutes on 8 cores and writes three files to `data/prepared/`:
 - `labels.json`: the 2,965 kanji in JIS order. A model output `i` means `labels[i]`.
 - `train.npz`: files 01–45 (180 writers), 533,700 samples.
 - `test.npz`: files 46–50 (20 writers), 59,300 samples.
 
 Hiragana are dropped. The split is by writer, so the test score measures handwriting the model has never seen.
 
-Each sample is preprocessed by `kanji_ml/preprocess.py`, which the app will copy exactly in TypeScript:
+First, `etl9g.without_form_marks` removes the pieces of the paper form that the scan caught around each sample: the borders and guide lines of the neighbouring boxes, and the ends of strokes written in them. Without this, about 3 in 4 samples would be cropped too wide. The step is for ETL images only, because a Drawing has no form around it.
+
+Each sample is then preprocessed by `kanji_ml/preprocess.py`, which the app will copy exactly in TypeScript:
 1. Pixels at or below a fifth of the strongest one become background.
 2. The image is cropped to the ink.
 3. It's scaled by area-averaging so its longer side is 40 pixels.

@@ -1,11 +1,107 @@
-"""Reads ETL9G files: fixed-size binary records of handwritten characters."""
+"""Reads ETL9G files: fixed-size binary records of handwritten characters.
+
+Each sample was scanned from a box on a paper form, and the scan's frame also
+caught pieces of the form around it: the borders and guide lines of the
+neighbouring boxes, and the ends of strokes written in them. These form marks
+widened the ink crop in about 3 of 4 samples, so the kanji was drawn small and
+off-centre. without_form_marks() removes them.
+
+It runs on ETL images only. A Drawing has no form around it, so the app's copy
+of preprocess.py doesn't need it.
+"""
 
 from pathlib import Path
 
 import numpy as np
 
+from kanji_ml.preprocess import INK_THRESHOLD
+
 RECORD_SIZE = 8199
 WIDTH, HEIGHT = 128, 127
+
+JOIN = 3  # ink separated by up to 2 * JOIN background pixels, across a row or column, is one cluster
+NEAR_EDGE = 15  # a cluster with ink this close to the frame edge may be a form mark...
+AT_EDGE = 3  # ...and is one if it has ink this close, cut off by the frame...
+SMALL = 0.1  # ...or holds less than this share of the ink
+
+
+def _grow(mask: np.ndarray, distance: int) -> np.ndarray:
+    """The pixels within distance of mask, across rows, columns and diagonals."""
+    out = mask.copy()
+    for step in range(1, distance + 1):
+        out[step:, :] |= mask[:-step, :]
+        out[:-step, :] |= mask[step:, :]
+    columns = out.copy()
+    for step in range(1, distance + 1):
+        out[:, step:] |= columns[:, :-step]
+        out[:, :-step] |= columns[:, step:]
+    return out
+
+
+def _runs(region: np.ndarray) -> np.ndarray:
+    """Numbers each horizontal run of region pixels, counting along the rows."""
+    starts = region & ~np.pad(region, ((0, 0), (1, 0)))[:, :-1]
+    return np.cumsum(starts).reshape(region.shape)
+
+
+def _connected(seeds: np.ndarray, region: np.ndarray) -> np.ndarray:
+    """The pixels of region joined to seeds through region, by rows and columns."""
+    row_runs, column_runs = _runs(region), _runs(region.T)
+    reached = seeds & region
+    while True:
+        hit = np.zeros(row_runs.max() + 1, dtype=bool)
+        hit[row_runs[reached]] = True
+        along_rows = region & hit[row_runs]
+        hit = np.zeros(column_runs.max() + 1, dtype=bool)
+        hit[column_runs[along_rows.T]] = True
+        along_columns = region & hit[column_runs].T
+        if (along_columns == reached).all():
+            return reached
+        reached = along_columns
+
+
+def _border(shape: tuple[int, int], width: int) -> np.ndarray:
+    border = np.ones(shape, dtype=bool)
+    border[width:-width, width:-width] = False
+    return border
+
+
+def without_form_marks(image: np.ndarray) -> np.ndarray:
+    """The image with form marks and background set to 0.
+
+    Background is every pixel at or below a fifth of the strongest one, as in
+    preprocess.py. It's cleared here too, so that preprocess.py doesn't measure
+    its fifth against a removed mark, which would bring faint specks back.
+
+    The ink is split into clusters. A cluster with ink near the frame edge is a
+    form mark if the frame cuts it off or it holds under a tenth of the ink.
+    Clusters away from the edge are never removed. If there are none, the
+    kanji fills the frame and its heaviest cluster is kept.
+    """
+    ink = image > image.max() * INK_THRESHOLD
+    out = np.where(ink, image, 0).astype(image.dtype)
+    if not ink.any():
+        return out
+
+    clustered = _grow(ink, JOIN)
+    near_edge = _connected(ink & _border(ink.shape, NEAR_EDGE), clustered)
+    clusters = []
+    left = near_edge.copy()
+    while left.any():
+        seed = np.zeros_like(left)
+        seed.flat[np.flatnonzero(left)[0]] = True
+        cluster = _connected(seed, left)
+        left &= ~cluster
+        clusters.append(cluster & ink)
+
+    weight = out.astype(np.float64)
+    masses = [weight[cluster].sum() for cluster in clusters]
+    keep = None if (ink & ~near_edge).any() else int(np.argmax(masses))
+    at_edge = _border(ink.shape, AT_EDGE)
+    for k, (cluster, mass) in enumerate(zip(clusters, masses)):
+        if k != keep and ((cluster & at_edge).any() or mass < SMALL * weight.sum()):
+            out[cluster] = 0
+    return out
 
 
 def _jis_to_character(jis: int) -> str | None:
