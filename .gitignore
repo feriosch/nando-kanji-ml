@@ -1,0 +1,6 @@
+.venv/
+data/
+*.npz
+*.h5
+*.keras
+__pycache__/
