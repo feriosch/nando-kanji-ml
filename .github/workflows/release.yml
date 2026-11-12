@@ -1,0 +1,104 @@
+# Ships the model to nando-web (step 7 of nando-kanji-ml#1, ADR 0005).
+#
+# Pushing a tag vN opens a PR in feriosch/nando-web that replaces
+# public/models/kanji/ with release/ (the model, its labels, release.json),
+# fixtures/drawings.json and a version.json holding the tag. Only that folder
+# changes: older models live in nando-web's git history.
+#
+# On this repo's PRs that touch the release, it does the same up to the commit
+# and shows the diff, without pushing: a dry run that needs no token.
+#
+# Needs the secret NANDO_WEB_TOKEN: a fine-grained token limited to
+# feriosch/nando-web, with Contents and Pull requests set to read and write.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths: ["release/**", "fixtures/drawings.json", ".github/workflows/release.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  nando-web:
+    runs-on: ubuntu-latest
+    env:
+      PUBLISH: ${{ github.event_name == 'push' }}
+      VERSION: ${{ github.event_name == 'push' && github.ref_name || 'dry-run' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the release files
+        run: |
+          python3 - <<'EOF'
+          import json, pathlib
+          release = json.loads(pathlib.Path("release/release.json").read_text(encoding="utf-8"))
+          labels = json.loads(pathlib.Path("release/labels.json").read_text(encoding="utf-8"))
+          fixtures = json.loads(pathlib.Path("fixtures/drawings.json").read_text(encoding="utf-8"))
+          assert pathlib.Path("release/kanji.tflite").stat().st_size > 0, "release/kanji.tflite is empty"
+          assert len(labels) == release["classes"] == len(set(labels)), "labels.json doesn't match release.json"
+          assert fixtures, "fixtures/drawings.json is empty"
+          print(f"{len(labels)} kanji, {len(fixtures)} fixture Drawings, runtime {release['runtime']}")
+          EOF
+
+      - name: Check the token
+        if: env.PUBLISH == 'true'
+        env:
+          TOKEN: ${{ secrets.NANDO_WEB_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || { echo "::error::Add the NANDO_WEB_TOKEN secret (see the top of release.yml)"; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          repository: feriosch/nando-web
+          path: web
+          # nando-web is public, so a dry run reads it with this repo's own token
+          token: ${{ env.PUBLISH == 'true' && secrets.NANDO_WEB_TOKEN || github.token }}
+
+      - name: Replace public/models/kanji
+        run: |
+          folder=web/public/models/kanji
+          rm -rf "$folder"
+          mkdir -p "$folder"
+          cp release/kanji.tflite release/labels.json release/release.json fixtures/drawings.json "$folder/"
+          printf '{\n  "version": "%s"\n}\n' "$VERSION" > "$folder/version.json"
+          git -C web add --all public/models/kanji
+          git -C web status --short
+          ls -la "$folder"
+
+      - name: Open the nando-web PR
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.NANDO_WEB_TOKEN }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}/tree/${{ github.ref_name }}
+        run: |
+          cd web
+          branch="kanji-model/$VERSION"
+          git switch --create "$branch"
+          git -c user.name="nando-kanji-ml release" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -m "Update the kanji model to $VERSION" -m "From $SOURCE"
+          git push --force --quiet origin "$branch"
+          accuracy=$(python3 -c "import json; r = json.load(open('public/models/kanji/release.json')); print(f\"top-1 {r['top1']:.2%}, top-8 {r['top8']:.2%}\")")
+          body=$(cat <<EOF
+          Kanji model **$VERSION** from [feriosch/nando-kanji-ml $VERSION]($SOURCE), on the ETL9G test set: $accuracy.
+
+          Replaces \`public/models/kanji/\`:
+          - \`kanji.tflite\`: the float16 model, for LiteRT.js on WASM
+          - \`labels.json\`: output i is the kanji \`labels[i]\`
+          - \`release.json\`: the runtime and input shape it was chosen and checked with
+          - \`drawings.json\`: the preprocessing fixtures; the TypeScript preprocessing must match each within 1 per pixel
+          - \`version.json\`: \`$VERSION\`
+
+          Opened by nando-kanji-ml's release workflow.
+          EOF
+          )
+          if gh pr view "$branch" --repo feriosch/nando-web >/dev/null 2>&1; then
+            gh pr edit "$branch" --repo feriosch/nando-web --body "$body"
+          else
+            gh pr create --repo feriosch/nando-web --base main --head "$branch" --title "Kanji model $VERSION" --body "$body"
+          fi

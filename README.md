@@ -165,6 +165,38 @@ Versions: LiteRT.js 2.6.0, TensorFlow.js 4.22.0, ONNX Runtime Web 1.31.1. Downlo
 - **The iPhone's cold load times aren't in the table.** Most runs reused files from an earlier run.
 - **TensorFlow.js on WebGL took about 1 second per run.** This is likely an artifact of the bench, but it isn't verified. TensorFlow.js waits for the GPU with a timer, and Safari slows timers to once a second in a frame that's out of view, as the bench's frame was then. The frame is now pinned on screen, but the iPhone hasn't re-run the bench since.
 
+## Release
+
+The app runs the model in `release/`, which is in git:
+- `kanji.tflite`: the float16 LiteRT model, for LiteRT.js on WASM (see "Runtime choice");
+- `labels.json`: output `i` is the kanji `labels[i]`;
+- `release.json`: the runtime, accelerator, input shape and test accuracy.
+
+Rebuild it after training:
+
+```bash
+python -m kanji_ml.release
+```
+
+It refuses to write anything unless the model matches Keras's top 8 on every fixture Drawing and the labels match its outputs.
+
+To ship a version, commit `release/` and push a tag:
+
+```bash
+git tag v1 && git push origin v1
+```
+
+The `Release` workflow then opens a PR in nando-web, replacing `public/models/kanji/` with:
+- the release files;
+- `fixtures/drawings.json`;
+- a `version.json` holding the tag.
+
+It needs the secret `NANDO_WEB_TOKEN`: a fine-grained token limited to feriosch/nando-web, with *Contents* and *Pull requests* set to read and write. On this repo's PRs that touch the release, the workflow does a dry run without the token.
+
+| Version | Model | Runtime |
+|---|---|---|
+| v1 | 99.42% top-1 / 99.92% top-8, float16 (3.8 MB) | LiteRT.js 2.6.0, WASM |
+
 ## Tests
 
 ```bash
