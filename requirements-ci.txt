@@ -1,0 +1,5 @@
+# What the tests need besides numpy, whose version CI takes from
+# requirements.txt so the tests always run on the training environment's numpy.
+# CI doesn't install requirements.txt itself: it pulls several GB of CUDA
+# packages that are useless without a GPU.
+pytest==9.2.0
