@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kanji_ml.strokes import drawing_to_model_input
+from kanji_ml.strokes import Drawing, drawing_to_model_input
 
 OUT = Path(__file__).resolve().parent.parent / "fixtures" / "drawings.json"
 
@@ -47,22 +47,24 @@ def _resample(stroke, step, wobble=0.0, rng=None):
     return [[round(float(x), 2), round(float(y), 2)] for x, y in out]
 
 
-def drawings() -> dict[str, list]:
+def drawings() -> dict[str, Drawing]:
     rng = np.random.default_rng(1)
     cases = {name: [_resample(s, 4, wobble=1.2, rng=rng) for s in strokes] for name, strokes in KANJI.items()}
+    far = [[[x + 5000, y + 3000] for x, y in s] for s in cases["十"]]
+    cases["十 far from the origin"] = far
+    cases["十 far from the origin, at 10x scale"] = [[[x * 10, y * 10] for x, y in s] for s in far]
     cross = KANJI["十"]
-    cases["十"] = [_resample(s, 4) for s in cross]  # straight, so the variants below match it
-    cases["十 far from the origin"] = [[[x + 5000, y + 3000] for x, y in s] for s in cases["十"]]
-    cases["十 at 10x scale"] = [[[x * 10, y * 10] for x, y in s] for s in cases["十"]]
-    cases["十 with dense points"] = [_resample(s, 0.5) for s in cross]
-    cases["十 with 2 points per stroke"] = [[list(map(float, p)) for p in s] for s in cross]
+    cases["十 straight"] = [_resample(s, 4) for s in cross]  # without wobble, so the two below match it
+    cases["十 straight, with dense points"] = [_resample(s, 0.5) for s in cross]
+    cases["十 straight, with 2 points per stroke"] = [[list(map(float, p)) for p in s] for s in cross]
+    cases["木 with strokes that have no points"] = [[], *cases["木"], []]  # skipped, as if they weren't there
     cases["tap"] = [[[200.0, 150.0]]]
     cases["crossing strokes"] = [_resample(s, 4, 1.2, rng) for s in [[(60, 60), (310, 310)], [(310, 60), (60, 310)]]]
     cases["a stroke that doubles back"] = [_resample([(60, 120), (300, 120), (80, 135), (290, 260)], 4, 1.2, rng)]
     return cases
 
 
-def write(path: Path = OUT) -> None:
+def write() -> None:
     lines = []
     for name, strokes in drawings().items():
         expected = drawing_to_model_input(strokes)
@@ -74,8 +76,8 @@ def write(path: Path = OUT) -> None:
             f'  "expected": [\n{rows}\n  ]\n'
             "}"
         )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("[\n" + ",\n".join(lines) + "\n]\n", encoding="utf-8")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text("[\n" + ",\n".join(lines) + "\n]\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

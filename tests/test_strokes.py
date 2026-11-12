@@ -11,8 +11,9 @@ def test_a_horizontal_stroke_becomes_a_soft_line_across_the_middle():
     rows = np.flatnonzero(out.any(axis=1))
     assert rows.min() >= 21 and rows.max() <= 26  # a line a few pixels thick, centred on row 23.5
     assert (out[:, 4:44] > 127).any(axis=0).all()  # it spans the 40-pixel box...
-    assert not out[:, :3].any() and not out[:, 45:].any()  # ...and no further
-    middle = out[:, 24]
+    # ...and no further, give or take the faint rounded ends of the stroke in columns 3 and 44
+    assert not out[:, :3].any() and not out[:, 45:].any()
+    middle = out[:, 24]  # a column across the line, halfway along it
     centre = int(np.argmax(middle))
     assert middle[centre] == 255
     assert (np.diff(middle[:centre + 1].astype(int)) >= 0).all()  # ink fades away from the centre line...
