@@ -60,6 +60,20 @@ Each sample is then preprocessed by `kanji_ml/preprocess.py`, which the app will
 4. It's centred in 48×48.
 5. It's stretched so the strongest ink is 255, as ink 255 on a 0 background.
 
+### Drawings
+
+The app builds the model's input from a Drawing's strokes, not from the screen's pixels. `kanji_ml/strokes.py` defines how, and the app copies it step for step in TypeScript. The spec and its reasons are on [#1](https://github.com/feriosch/nando-kanji-ml/issues/1).
+1. The strokes are scaled to fit a 160-pixel box, 4× the model's 40 pixels. Where and how big the Owner drew doesn't matter. Strokes with no points are skipped.
+2. They're drawn with a soft pen on a 164-pixel square, measured at each pixel's centre. Ink fades from 1 on a stroke's centre line to 0 at 6 pixels away, like ETL's scanned strokes. Where strokes overlap, the stronger ink wins.
+3. The ink is stored as whole numbers, `floor(ink × 255 + 0.5)`.
+4. The image goes through `preprocess.py` as above.
+
+`fixtures/drawings.json` holds Drawings and the 48×48 input each must give, and each release copies it to nando-web. Python must match it exactly. The TypeScript copy may differ by 1 per pixel, because `preprocess.py`'s area-averaging is a matrix product, and NumPy adds it up in a different order from a plain loop. Regenerate the file only when the preprocessing changes on purpose:
+
+```bash
+python -m kanji_ml.fixtures
+```
+
 ## Train
 
 ```bash
