@@ -98,9 +98,32 @@ def test_keeps_the_heaviest_ink_when_all_of_it_is_near_the_frame_edge():
     kanji = fake_etl.blank()
     kanji[0:127, 60:64] = 11  # one stroke from the top of the frame to the bottom
     image = kanji.copy()
-    image[40:44, 100:128] = 11  # a lighter, separate one cut off by the right edge
+    image[40:44, 110:128] = 11  # a lighter, separate one cut off by the right edge
 
     np.testing.assert_array_equal(etl9g.without_form_marks(image), kanji)
+
+
+def test_keeps_a_kanji_written_up_to_the_frame_edge_when_it_also_has_a_separate_part_inside():
+    image = fake_etl.blank()
+    image[1:120, 60:64] = 11   # a stroke reaching the top of the frame...
+    image[60:64, 20:110] = 11  # ...crossing another one...
+    image[30:33, 30:33] = 11   # ...and a small separate dot away from the edge
+
+    np.testing.assert_array_equal(etl9g.without_form_marks(image), image)
+
+
+def test_keeps_a_lighter_part_of_a_kanji_that_runs_from_the_middle_to_the_frame_edge():
+    image = fake_etl.blank()
+    image[40:90, 20:50] = 11  # a heavy left part away from the edge, like 言 in 訂...
+    image[50:54, 60:100] = 11  # ...and a separate 丁 whose stroke runs down to the bottom of the frame
+    image[50:127, 78:82] = 11
+
+    np.testing.assert_array_equal(etl9g.without_form_marks(image), image)
+
+
+def test_refuses_an_image_that_is_not_an_etl9g_frame():
+    with pytest.raises(ValueError, match="127x128"):
+        etl9g.without_form_marks(np.zeros((28, 28), dtype=np.uint8))
 
 
 def test_sets_pixels_under_a_fifth_of_the_strongest_to_zero_and_leaves_clean_images_unchanged():
