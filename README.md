@@ -124,7 +124,7 @@ To try the bench locally, serve `bench/` (for example `python -m http.server -d 
 - the load time, the first run, and the median run time;
 - whether the top 1 and top 8 match Keras.
 
-The published bench is at https://feriosch.github.io/nando-kanji-ml/, served from the `gh-pages` branch. To update it, re-run the export and copy `bench/` (with `models/` and `reference.json`) to that branch.
+The published bench is at https://feriosch.github.io/nando-kanji-ml/, served from the `gh-pages` branch. To update it, re-run the export, then run `scripts/publish_bench.sh`. It publishes the page, the models and `reference.json` from that one export, refuses if a model is missing, and records the source commit. Add `--dry-run` to see the commit without pushing.
 
 ### Runtime choice
 
@@ -163,7 +163,7 @@ Versions: LiteRT.js 2.6.0, TensorFlow.js 4.22.0, ONNX Runtime Web 1.31.1. Downlo
 **Caveats:**
 - **Download sizes were measured on the published bench in desktop Chrome,** because Safari reports cached files as 0 bytes. The bytes are the same on any device, except possibly for WebGPU, where Safari may fetch different runtime files.
 - **The iPhone's cold load times aren't in the table.** Most runs reused files from an earlier run.
-- **TensorFlow.js on WebGL took about 1 second per run.** This is likely an artifact of the bench, but it isn't verified. TensorFlow.js waits for the GPU with a timer, and Safari slows timers to once a second in a frame that's out of view, as the bench's frame was.
+- **TensorFlow.js on WebGL took about 1 second per run.** This is likely an artifact of the bench, but it isn't verified. TensorFlow.js waits for the GPU with a timer, and Safari slows timers to once a second in a frame that's out of view, as the bench's frame was then. The frame is now pinned on screen, but the iPhone hasn't re-run the bench since.
 
 ## Tests
 

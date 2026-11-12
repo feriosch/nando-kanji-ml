@@ -83,19 +83,24 @@ function median(values) {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
+// Bytes over the network for the runtime and model. A file served from the cache has transferSize 0.
+// Chrome still reports its size; Safari reports 0, so those files are counted as unmeasured.
 function downloaded() {
   let bytes = 0;
   let cached = 0;
+  let unmeasured = 0;
   for (const entry of performance.getEntriesByType("resource")) {
     if (entry.name.includes("reference.json")) continue; // the bench's own test data, not the runtime's
     bytes += entry.encodedBodySize;
-    if (entry.transferSize === 0 && entry.encodedBodySize > 0) cached += 1;
+    if (entry.transferSize === 0) cached += 1;
+    if (entry.transferSize === 0 && entry.encodedBodySize === 0) unmeasured += 1;
   }
-  return { bytes, cached };
+  return { bytes, cached, unmeasured };
 }
 
 async function run(variant) {
   const reference = await (await fetch("reference.json")).json();
+  if (!reference.exported.includes(variant.model)) throw new Error("not exported: run python -m kanji_ml.export with the TF.js venv");
   const inputs = reference.fixtures.map((f) => Float32Array.from(f.input.flat()));
   const loadStart = performance.now(); // after the page and test data, so this times only runtime + model
   const predict = await RUNTIMES[variant.runtime](variant);

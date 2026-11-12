@@ -7,11 +7,15 @@ Writes bench/models/ (not in git):
 - kanji.tflite, kanji_f16.tflite: LiteRT
 - kanji.onnx, kanji_f16.onnx: ONNX Runtime Web
 and bench/reference.json: Keras's top-8 for every fixture Drawing, which the
-bench page checks each runtime against. Each export is also checked here,
-except TF.js, which only runs in the browser.
+bench page checks each runtime against, and the list of models exported.
+
+The LiteRT and ONNX exports must match Keras's top 8 on every fixture, or the
+export fails and leaves the previous bench/models/ as it was. TF.js only runs
+in the browser, so the bench page checks it.
 
 TF.js needs its own venv, because tensorflowjs 4.22 pins an older TensorFlow
-(see the README's "Export" section). The other converters run in the training venv.
+(see the README's "Export and bench" section). The other converters run in the
+training venv.
 """
 
 import json
@@ -53,8 +57,18 @@ def top(scores: np.ndarray) -> np.ndarray:
     return np.argsort(-scores, axis=1, kind="stable")[:, :TOP]
 
 
+def check_matches_keras(name: str, scores: np.ndarray, keras_top: np.ndarray) -> None:
+    """Raises unless every Drawing's top 8, in order, is the same as Keras's."""
+    same = int((top(scores) == keras_top).all(axis=1).sum())
+    if same < len(keras_top):
+        raise ValueError(f"{name}'s top 8 matches Keras on only {same}/{len(keras_top)} fixture Drawings")
+
+
 def _run(*command: str) -> None:
-    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    done = subprocess.run(command, capture_output=True, text=True)
+    if done.returncode:
+        raise RuntimeError(f"{Path(command[0]).name} {' '.join(command[1:3])} failed ({done.returncode}):\n"
+                           f"{done.stderr.strip()[-3000:]}")
 
 
 def _litert(saved_model: Path, out: Path, float16: bool) -> None:
@@ -98,51 +112,58 @@ def _onnx_scores(path: Path, x: np.ndarray) -> np.ndarray:
     return np.stack([session.run(None, {name: image[None]})[0][0] for image in x])  # one at a time, like the app
 
 
+CHECKS = {
+    "kanji.tflite": _litert_scores,
+    "kanji_f16.tflite": _litert_scores,
+    "kanji.onnx": _onnx_scores,
+    "kanji_f16.onnx": _onnx_scores,
+}
+
+
 def export(trained: Path) -> dict[str, dict]:
     models = BENCH / "models"
-    shutil.rmtree(models, ignore_errors=True)
-    models.mkdir(parents=True)
-    work = models / ".saved_model"
+    building = BENCH / ".models-building"  # swapped in for models/ only once every export is built and checked
+    shutil.rmtree(building, ignore_errors=True)
+    building.mkdir(parents=True)
+    work = building / ".saved_model"
     model = inference_model(trained)
     # A fixed batch of 1: the app recognises one Drawing at a time, and WebGPU runtimes want fixed shapes.
     model.export(work, format="tf_saved_model", verbose=False,
                  input_signature=[tf.TensorSpec((1, *model.input_shape[1:]), tf.float32)])
-
     names, x = fixture_inputs()
     keras_top = top(model.predict(x, verbose=0))
+
+    _litert(work, building / "kanji.tflite", float16=False)
+    _litert(work, building / "kanji_f16.tflite", float16=True)
+    _onnx(work, building / "kanji.onnx")
+    _onnx_float16(building / "kanji.onnx", building / "kanji_f16.onnx")
+    if TFJS_CONVERTER.exists():
+        _run(str(TFJS_CONVERTER), "--input_format=tf_saved_model", "--output_format=tfjs_graph_model",
+             str(work), str(building / "tfjs"))
+        _run(str(TFJS_CONVERTER), "--input_format=tf_saved_model", "--output_format=tfjs_graph_model",
+             "--quantize_float16=*", str(work), str(building / "tfjs_f16"))
+    shutil.rmtree(work)
+
+    report = {}
+    for name, scores in CHECKS.items():
+        check_matches_keras(name, scores(building / name, x), keras_top)
+        report[name] = {"bytes": (building / name).stat().st_size, "top8_same_as_keras": f"{len(names)}/{len(names)}"}
+    for name in ("tfjs", "tfjs_f16"):
+        if (building / name).exists():
+            size = sum(f.stat().st_size for f in (building / name).iterdir())
+            report[name] = {"bytes": size, "top8_same_as_keras": "checked in the browser"}
+
+    shutil.rmtree(models, ignore_errors=True)
+    building.rename(models)
     labels = json.loads((ROOT / "data" / "prepared" / "labels.json").read_text(encoding="utf-8"))
+    exported = [f"models/{name}" for name in CHECKS] + [f"models/{name}/model.json" for name in ("tfjs", "tfjs_f16")
+                                                        if (models / name).exists()]
     (BENCH / "reference.json").write_text(json.dumps({
         "labels": labels,
+        "exported": exported,
         "fixtures": [{"name": n, "input": image[..., 0].astype(int).tolist(), "keras_top8": [int(i) for i in t]}
                      for n, image, t in zip(names, x, keras_top)],
     }, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    _litert(work, models / "kanji.tflite", float16=False)
-    _litert(work, models / "kanji_f16.tflite", float16=True)
-    _onnx(work, models / "kanji.onnx")
-    _onnx_float16(models / "kanji.onnx", models / "kanji_f16.onnx")
-    if TFJS_CONVERTER.exists():
-        _run(str(TFJS_CONVERTER), "--input_format=tf_saved_model", "--output_format=tfjs_graph_model",
-             str(work), str(models / "tfjs"))
-        _run(str(TFJS_CONVERTER), "--input_format=tf_saved_model", "--output_format=tfjs_graph_model",
-             "--quantize_float16=*", str(work), str(models / "tfjs_f16"))
-    shutil.rmtree(work)
-
-    checks = {
-        "kanji.tflite": lambda p: _litert_scores(p, x),
-        "kanji_f16.tflite": lambda p: _litert_scores(p, x),
-        "kanji.onnx": lambda p: _onnx_scores(p, x),
-        "kanji_f16.onnx": lambda p: _onnx_scores(p, x),
-    }
-    report = {}
-    for name, scores in checks.items():
-        path = models / name
-        agree = int((top(scores(path)) == keras_top).all(axis=1).sum())
-        report[name] = {"bytes": path.stat().st_size, "top8_same_as_keras": f"{agree}/{len(names)}"}
-    for name in ("tfjs", "tfjs_f16"):
-        if (models / name).exists():
-            size = sum(f.stat().st_size for f in (models / name).iterdir())
-            report[name] = {"bytes": size, "top8_same_as_keras": "checked in the browser"}
     return report
 
 
@@ -153,6 +174,6 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="models/kanji.keras", help="the trained model from python -m kanji_ml.train")
     args = parser.parse_args()
     if not TFJS_CONVERTER.exists():
-        print(f"no {TFJS_CONVERTER}: skipping TensorFlow.js (see the README's Export section)")
+        print(f"no {TFJS_CONVERTER}: skipping TensorFlow.js (see the README's \"Export and bench\" section)")
     for name, info in export(Path(args.model)).items():
         print(f"{name:18s} {info['bytes'] / 1e6:5.2f} MB   top-8 same as Keras: {info['top8_same_as_keras']}")

@@ -8,3 +8,4 @@ models/
 .venv-tfjs/
 bench/models/
 bench/reference.json
+bench/.models-building/
