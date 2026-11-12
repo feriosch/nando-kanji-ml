@@ -42,3 +42,11 @@ def test_rejects_a_file_that_is_not_a_whole_number_of_records(tmp_path):
 
     with pytest.raises(ValueError, match="ETL9G_01"):
         etl9g.read_file(path)
+
+
+def test_names_the_file_and_record_when_a_jis_code_is_not_a_character(tmp_path):
+    path = tmp_path / "ETL9G_07"
+    fake_etl.write(path, [fake_etl.record(0x3021, fake_etl.blank()), fake_etl.record(0x0000, fake_etl.blank())])
+
+    with pytest.raises(ValueError, match=r"ETL9G_07.*record 1"):
+        etl9g.read_file(path)

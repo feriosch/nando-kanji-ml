@@ -1,3 +1,4 @@
+import pytest
 import json
 
 import numpy as np
@@ -54,6 +55,7 @@ def test_splits_by_writer_file_and_keeps_each_image_with_its_label(tmp_path):
     assert [labels[i] for i in train["y"]] == ["亜", "唖"]
     assert [labels[i] for i in test["y"]] == ["唖", "亜"]
     assert train["x"].dtype == np.uint8 and train["x"].shape == (2, 48, 48)
+    assert train["y"].dtype == np.int32  # what TensorFlow's sparse losses accept
     np.testing.assert_array_equal(train["x"][0], to_model_input(a_in_45))
     np.testing.assert_array_equal(train["x"][1], to_model_input(aa_in_45))
     np.testing.assert_array_equal(test["x"][0], to_model_input(aa_in_46))
@@ -70,3 +72,14 @@ def test_returns_how_many_kanji_and_samples_it_kept(tmp_path):
     summary = dataset.build(etl, tmp_path / "out")
 
     assert summary == {"kanji": 2, "train": 3, "test": 1}
+
+
+def test_refuses_a_folder_with_no_etl9g_files(tmp_path):
+    folder = tmp_path / "ETL9G"
+    folder.mkdir()
+    (folder / "ETL9INFO").write_bytes(b"not records")
+
+    with pytest.raises(FileNotFoundError, match="ETL9G_01"):
+        dataset.build(folder, tmp_path / "out")
+
+    assert not (tmp_path / "out").exists()

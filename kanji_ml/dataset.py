@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from kanji_ml import etl9g
-from kanji_ml.preprocess import to_model_input
+from kanji_ml.preprocess import SIZE, to_model_input
 
 FIRST_TEST_FILE = 46
 
@@ -26,31 +26,35 @@ def _jis_order(character: str) -> bytes:
 
 def build(etl_dir: Path, out_dir: Path) -> dict[str, int]:
     etl_dir, out_dir = Path(etl_dir), Path(out_dir)
-    samples = {"train": ([], []), "test": ([], [])}  # split -> (characters, images)
-    for path in sorted(etl_dir.glob("ETL9G_[0-9][0-9]")):
-        split = "test" if int(path.name[-2:]) >= FIRST_TEST_FILE else "train"
-        characters, images = etl9g.read_file(path)
-        for character, image in zip(characters, images):
-            if not _is_hiragana(character):
-                samples[split][0].append(character)
-                samples[split][1].append(to_model_input(image))
+    paths = sorted(etl_dir.glob("ETL9G_[0-9][0-9]"))
+    if not paths:
+        raise FileNotFoundError(f"no ETL9G data files (ETL9G_01 to ETL9G_50) in {etl_dir}")
 
-    labels = sorted({c for characters, _ in samples.values() for c in characters}, key=_jis_order)
+    characters = {"train": [], "test": []}
+    images = {"train": [], "test": []}  # one uint8 array per file
+    for path in paths:
+        split = "test" if int(path.name[-2:]) >= FIRST_TEST_FILE else "train"
+        file_characters, file_images = etl9g.read_file(path)
+        kept = [i for i, c in enumerate(file_characters) if not _is_hiragana(c)]
+        processed = np.empty((len(kept), SIZE, SIZE), dtype=np.uint8)
+        for row, i in enumerate(kept):
+            processed[row] = to_model_input(file_images[i])
+        characters[split].extend(file_characters[i] for i in kept)
+        images[split].append(processed)
+
+    labels = sorted({c for split in characters.values() for c in split}, key=_jis_order)
     index = {character: i for i, character in enumerate(labels)}
 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "labels.json").write_text(json.dumps(labels, ensure_ascii=False), encoding="utf-8")
-    for split, (characters, images) in samples.items():
+    for split in ("train", "test"):
         np.savez(
             out_dir / f"{split}.npz",
-            x=np.array(images, dtype=np.uint8).reshape(-1, 48, 48),
-            y=np.array([index[c] for c in characters], dtype=np.uint16),
+            x=np.concatenate(images[split]) if images[split] else np.empty((0, SIZE, SIZE), np.uint8),
+            # int32: TensorFlow's sparse losses don't accept unsigned labels
+            y=np.array([index[c] for c in characters[split]], dtype=np.int32),
         )
-    return {
-        "kanji": len(labels),
-        "train": len(samples["train"][0]),
-        "test": len(samples["test"][0]),
-    }
+    return {"kanji": len(labels), "train": len(characters["train"]), "test": len(characters["test"])}
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 """Turns a grayscale image of one kanji into the model's 48x48 input.
 
 The app runs the same steps in TypeScript on the Owner's Drawing, so this is
-plain NumPy arithmetic that can be copied exactly. Two details to copy with it:
-Python's round() and np.rint() round halves to even (2.5 -> 2), unlike
-JavaScript's Math.round(), and the area weights are float64 like JS numbers.
+plain NumPy arithmetic that can be copied exactly. It rounds halves up
+(floor(x + 0.5)), like JavaScript's Math.round(), rather than to even like
+Python's round(), and computes in float64, like JavaScript numbers.
 """
 
 import numpy as np
@@ -11,6 +11,11 @@ import numpy as np
 SIZE = 48
 INK_BOX = 40  # the ink's longer side is scaled to this, leaving a 4-pixel margin
 INK_THRESHOLD = 0.2  # pixels at or below this fraction of the strongest pixel are background
+
+
+def _round(x):
+    """Rounds halves up, like JavaScript's Math.round()."""
+    return np.floor(np.asarray(x) + 0.5)
 
 
 def _area_weights(source: int, target: int) -> np.ndarray:
@@ -36,10 +41,10 @@ def to_model_input(image: np.ndarray) -> np.ndarray:
     ink = image[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
 
     scale = INK_BOX / max(ink.shape)
-    height = max(1, round(ink.shape[0] * scale))
-    width = max(1, round(ink.shape[1] * scale))
+    height = max(1, int(_round(ink.shape[0] * scale)))
+    width = max(1, int(_round(ink.shape[1] * scale)))
     top, left = (SIZE - height) // 2, (SIZE - width) // 2
 
     out = np.zeros((SIZE, SIZE))
     out[top:top + height, left:left + width] = _resize(ink, height, width)
-    return np.rint(out * 255 / out.max()).astype(np.uint8)
+    return _round(out * 255 / out.max()).astype(np.uint8)

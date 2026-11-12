@@ -79,3 +79,14 @@ def test_gives_the_same_result_whatever_the_input_resolution():
     large = np.kron(small, np.ones((4, 4), dtype=np.uint8))  # the same drawing at 4x the resolution
 
     np.testing.assert_array_equal(to_model_input(large), to_model_input(small))
+
+
+def test_rounds_halves_up_like_javascript():
+    image = etl_frame()
+    image[10:90, 10:43] = 11  # 80 tall, 33 wide: scaled by 1/2 the width is 16.5 pixels
+
+    out = to_model_input(image)
+
+    expected = np.zeros((48, 48), dtype=np.uint8)
+    expected[4:44, 15:32] = 255  # 16.5 rounds up to 17 columns, centred from (48 - 17) // 2 = 15
+    np.testing.assert_array_equal(out, expected)
