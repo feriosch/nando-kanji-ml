@@ -62,6 +62,18 @@ def test_splits_by_writer_file_and_keeps_each_image_with_its_label(tmp_path):
     np.testing.assert_array_equal(test["x"][1], to_model_input(a_in_46))
 
 
+def test_removes_marks_from_the_etl_form_before_preprocessing(tmp_path):
+    kanji = mark(40, 40, 30, 30)
+    with_form_line = kanji.copy()
+    with_form_line[:, 0:2] = 11  # a box border on the form, cut off by the frame
+    etl = fake_etl9g(tmp_path / "ETL9G", {"ETL9G_01": [(A, with_form_line)], "ETL9G_46": [(A, kanji)]})
+
+    dataset.build(etl, tmp_path / "out")
+
+    train = np.load(tmp_path / "out" / "train.npz")
+    np.testing.assert_array_equal(train["x"][0], to_model_input(kanji))
+
+
 def test_returns_how_many_kanji_and_samples_it_kept(tmp_path):
     etl = fake_etl9g(tmp_path / "ETL9G", {
         "ETL9G_01": [(A, mark(10, 10, 30, 30)), (HIRAGANA_A, mark(10, 10, 30, 30)), (AA, mark(10, 10, 30, 30))],

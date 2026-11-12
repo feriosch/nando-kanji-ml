@@ -6,6 +6,8 @@ handwriting it has never seen.
 """
 
 import json
+import os
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +16,7 @@ from kanji_ml import etl9g
 from kanji_ml.preprocess import SIZE, to_model_input
 
 FIRST_TEST_FILE = 46
+MAX_WORKERS = 8  # each holds one ETL9G file, about 300 MB, in memory
 
 
 def _is_hiragana(character: str) -> bool:
@@ -24,6 +27,16 @@ def _jis_order(character: str) -> bytes:
     return character.encode("euc_jp")  # EUC-JP keeps the JIS X 0208 order
 
 
+def _process_file(path: Path) -> tuple[list[str], np.ndarray]:
+    """The kanji in one ETL9G file and their model inputs, without the hiragana."""
+    file_characters, file_images = etl9g.read_file(path)
+    kept = [i for i, c in enumerate(file_characters) if not _is_hiragana(c)]
+    processed = np.empty((len(kept), SIZE, SIZE), dtype=np.uint8)
+    for row, i in enumerate(kept):
+        processed[row] = to_model_input(etl9g.without_form_marks(file_images[i]))
+    return [file_characters[i] for i in kept], processed
+
+
 def build(etl_dir: Path, out_dir: Path) -> dict[str, int]:
     etl_dir, out_dir = Path(etl_dir), Path(out_dir)
     paths = sorted(etl_dir.glob("ETL9G_[0-9][0-9]"))
@@ -32,15 +45,11 @@ def build(etl_dir: Path, out_dir: Path) -> dict[str, int]:
 
     characters = {"train": [], "test": []}
     images = {"train": [], "test": []}  # one uint8 array per file
-    for path in paths:
-        split = "test" if int(path.name[-2:]) >= FIRST_TEST_FILE else "train"
-        file_characters, file_images = etl9g.read_file(path)
-        kept = [i for i, c in enumerate(file_characters) if not _is_hiragana(c)]
-        processed = np.empty((len(kept), SIZE, SIZE), dtype=np.uint8)
-        for row, i in enumerate(kept):
-            processed[row] = to_model_input(file_images[i])
-        characters[split].extend(file_characters[i] for i in kept)
-        images[split].append(processed)
+    with ProcessPoolExecutor(max_workers=min(len(paths), os.cpu_count() or 1, MAX_WORKERS)) as pool:
+        for path, (file_characters, processed) in zip(paths, pool.map(_process_file, paths)):
+            split = "test" if int(path.name[-2:]) >= FIRST_TEST_FILE else "train"
+            characters[split].extend(file_characters)
+            images[split].append(processed)
 
     labels = sorted({c for split in characters.values() for c in split}, key=_jis_order)
     index = {character: i for i, character in enumerate(labels)}
