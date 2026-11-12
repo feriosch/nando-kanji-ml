@@ -1,0 +1,13 @@
+{
+  "runtime": "@litertjs/core@2.6.0",
+  "accelerator": "wasm",
+  "input": [
+    1,
+    48,
+    48,
+    1
+  ],
+  "classes": 2965,
+  "top1": 0.9942327150084317,
+  "top8": 0.9991568296795953
+}
