@@ -81,10 +81,10 @@ python -m kanji_ml.train
 ```
 
 It trains on `data/prepared/` and writes `models/kanji.keras` (the best epoch), `history.csv` and `metrics.json`. On the RTX 3070 it takes about 30 minutes.
-- **Model** (`kanji_ml/model.py`): three conv blocks (64, 128 and 256 filters, each two 3×3 convolutions with batch normalisation), then global average pooling, dropout and a softmax over the 2,965 kanji. That's 1,908,949 parameters. It takes the preprocessed image as it is, 0–255.
-- **Validation:** the last 2 training files (8 writers) are held out for early stopping, so validation is also on unseen writers. The test set is used once, at the end.
-- **Augmentation:** rotation ±10°, zoom ±10% and shifts of ±6%. There's no stroke-width augmentation, because Drawings are drawn to match ETL's typical stroke (see the spec on #1).
-- **Training:** Adam at 1e-3, mixed precision, batches of 256. The learning rate drops ×0.3 when validation loss stalls for 2 epochs, and training stops after 5.
+- **Model** (`kanji_ml/model.py`): three conv blocks (64, 128 and 256 filters, each two 3×3 convolutions with batch normalisation), then global average pooling, dropout and a softmax over the 2,965 kanji. That's 1,908,949 parameters, about 7.6 MB as float32. It takes the preprocessed image as it is, 0–255.
+- **Validation:** the last 2 training files (8 writers) are held out for early stopping, so validation is also on unseen writers. The test set is used once, at the end. `dataset.hold_out_last_files` checks that the samples are whole files in file order, so writers can't leak across.
+- **Augmentation** (`kanji_ml/augment.py`): rotation ±10°, zoom ±10% and shifts of ±6%, plus mild stroke-width variation. A third of the images get about a pixel thicker and a third about a pixel thinner. Drawings already match ETL's typical stroke (see the spec on #1), so this only keeps the model from relying on one exact width.
+- **Training:** Adam at 1e-3, mixed precision, batches of 256, with every sample shuffled each epoch. The learning rate drops ×0.3 when validation loss stalls for 2 epochs, and training stops after 5.
 
 The script ends by printing top-1 and top-8 on the test set (20 writers the model has never seen), and whether top-8 passes the 95% shipping gate (ADR 0005).
 
@@ -92,7 +92,7 @@ The script ends by printing top-1 and top-8 on the test set (20 writers the mode
 
 | Version | Top-1 | Top-8 | Test samples | Epochs | Notes |
 |---|---|---|---|---|---|
-| v1 (unreleased) | 99.40% | 99.90% | 59,300 | 25 (best: 20) | |
+| v1 (unreleased) | 99.42% | 99.92% | 59,300 | 24 (best: 19) | With stroke-width augmentation. The first run, without it, scored 99.40% / 99.90%. |
 
 ## Tests
 
