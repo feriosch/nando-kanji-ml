@@ -92,7 +92,7 @@ The script ends by printing top-1 and top-8 on the test set (20 writers the mode
 
 | Version | Top-1 | Top-8 | Test samples | Epochs | Notes |
 |---|---|---|---|---|---|
-| v1 (unreleased) | 99.42% | 99.92% | 59,300 | 24 (best: 19) | With stroke-width augmentation. The first run, without it, scored 99.40% / 99.90%. |
+| v1 | 99.42% | 99.92% | 59,300 | 24 (best: 19) | With stroke-width augmentation. The first run, without it, scored 99.40% / 99.90%. |
 
 ## Export and bench
 
