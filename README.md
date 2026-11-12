@@ -60,10 +60,30 @@ Each sample is then preprocessed by `kanji_ml/preprocess.py`, which the app will
 4. It's centred in 48×48.
 5. It's stretched so the strongest ink is 255, as ink 255 on a 0 background.
 
+## Train
+
+```bash
+python -m kanji_ml.train
+```
+
+It trains on `data/prepared/` and writes `models/kanji.keras` (the best epoch), `history.csv` and `metrics.json`. On the RTX 3070 it takes about 30 minutes.
+- **Model** (`kanji_ml/model.py`): three conv blocks (64, 128 and 256 filters, each two 3×3 convolutions with batch normalisation), then global average pooling, dropout and a softmax over the 2,965 kanji. That's 1,908,949 parameters. It takes the preprocessed image as it is, 0–255.
+- **Validation:** the last 2 training files (8 writers) are held out for early stopping, so validation is also on unseen writers. The test set is used once, at the end.
+- **Augmentation:** rotation ±10°, zoom ±10% and shifts of ±6%. There's no stroke-width augmentation, because Drawings are drawn to match ETL's typical stroke (see the spec on #1).
+- **Training:** Adam at 1e-3, mixed precision, batches of 256. The learning rate drops ×0.3 when validation loss stalls for 2 epochs, and training stops after 5.
+
+The script ends by printing top-1 and top-8 on the test set (20 writers the model has never seen), and whether top-8 passes the 95% shipping gate (ADR 0005).
+
+### Results
+
+| Version | Top-1 | Top-8 | Test samples | Epochs | Notes |
+|---|---|---|---|---|---|
+| v1 (unreleased) | 99.40% | 99.90% | 59,300 | 25 (best: 20) | |
+
 ## Tests
 
 ```bash
 pytest
 ```
 
-The tests use small fake ETL9G files, so they run without the dataset. CI installs only `requirements-ci.txt`.
+The tests use small fake ETL9G files, so they run without the dataset. CI installs only `requirements-ci.txt`, so the model tests, which need TensorFlow, run only on the training machine.
