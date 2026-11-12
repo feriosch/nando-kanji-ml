@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kanji Runtime Bench</title>
+  <style>
+    :root { --bg: #fafaf8; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --ok: #1f7a3f; --bad: #b3261e; --accent: #2b59c3; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #2e2e2b; --ok: #5cc27f; --bad: #f2867d; --accent: #8fb0ff; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 15px/1.45 -apple-system, system-ui, sans-serif; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p { margin: 4px 0 12px; color: var(--muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    button { font: inherit; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--fg); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: 0.5; }
+    .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; }
+    tr:last-child td { border-bottom: 0; }
+    th { color: var(--muted); font-weight: 600; }
+    .ok { color: var(--ok); }
+    .bad { color: var(--bad); }
+    .error { color: var(--bad); white-space: normal; text-align: left; }
+    #device { font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); word-break: break-word; }
+    #runner { width: 100%; height: 120px; border: 1px solid var(--line); border-radius: 10px; margin-top: 12px; background: #fff; }
+  </style>
+</head>
+<body>
+  <h1>Kanji runtime bench</h1>
+  <p>Step 6 of nando-kanji-ml#1. Each runtime runs the trained model on 19 Drawings, one at a time like the app, and is checked against Keras's top 8. For honest download and load times, open this page fresh (a private tab works) and press <b>Run all</b> once.</p>
+  <div id="device"></div>
+  <div class="actions">
+    <button class="primary" id="all">Run all</button>
+    <button id="copy" disabled>Copy results</button>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>Variant</th><th>Download</th><th>Load</th><th>1st run</th><th>Per run</th><th>Top-1 = Keras</th><th>Top-8 = Keras</th><th></th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <iframe id="runner" title="Current run"></iframe>
+
+  <script type="module">
+    import { VARIANTS, VERSIONS } from "./variants.js";
+
+    const TIMEOUT_MS = 120_000;
+    const rows = document.querySelector("#rows");
+    const results = new Map();
+    const device = [
+      navigator.userAgent,
+      `WebGPU: ${navigator.gpu ? "yes" : "no"}`,
+      `cross-origin isolated: ${self.crossOriginIsolated ? "yes" : "no"}`,
+      `cores: ${navigator.hardwareConcurrency ?? "?"}`,
+    ].join(" · ");
+    document.querySelector("#device").textContent = device;
+
+    const label = (v) => `${VERSIONS[v.runtime].split(" ").slice(0, -1).join(" ")} · ${v.backend} · ${v.precision}`;
+    const ms = (n) => `${n < 10 ? n.toFixed(1) : Math.round(n)} ms`;
+    const mb = (b) => `${(b / 1e6).toFixed(1)} MB`;
+    const all = (fraction) => fraction.split("/")[0] === fraction.split("/")[1];
+
+    function render() {
+      rows.innerHTML = "";
+      for (const v of VARIANTS) {
+        const r = results.get(v.id);
+        const tr = document.createElement("tr");
+        const cells = !r ? ["", "", "", "", "", ""].map(() => "<td></td>").join("")
+          : r === "running" ? `<td colspan="6" style="text-align:left">running…</td>`
+          : r.error ? `<td colspan="6" class="error">${r.error}</td>`
+          : `<td>${mb(r.bytes)}${r.cached ? ` <span title="${r.cached} files came from the cache">*</span>` : ""}</td>
+             <td>${ms(r.loadMs)}</td><td>${ms(r.firstMs)}</td><td>${ms(r.medianMs)}</td>
+             <td class="${all(r.sameTop1) ? "ok" : "bad"}">${r.sameTop1}</td>
+             <td class="${all(r.sameTop8) ? "ok" : "bad"}">${r.sameTop8}</td>`;
+        tr.innerHTML = `<td>${label(v)}</td>${cells}<td><button data-id="${v.id}">Run</button></td>`;
+        rows.append(tr);
+      }
+      document.querySelector("#copy").disabled = ![...results.values()].some((r) => r && r !== "running");
+    }
+
+    function runOne(variant) {
+      results.set(variant.id, "running");
+      render();
+      return new Promise((resolve) => {
+        const frame = document.querySelector("#runner");
+        const done = (message) => {
+          clearTimeout(timer);
+          removeEventListener("message", onMessage);
+          results.set(variant.id, message.error ? { error: message.error } : message.result);
+          render();
+          resolve();
+        };
+        const onMessage = (event) => { if (event.data?.id === variant.id) done(event.data); };
+        const timer = setTimeout(() => done({ error: `no result after ${TIMEOUT_MS / 1000} s` }), TIMEOUT_MS);
+        addEventListener("message", onMessage);
+        frame.src = `run.html?v=${encodeURIComponent(variant.id)}&t=${Date.now()}`;
+      });
+    }
+
+    rows.addEventListener("click", (event) => {
+      const id = event.target.dataset?.id;
+      if (id) runOne(VARIANTS.find((v) => v.id === id));
+    });
+
+    document.querySelector("#all").addEventListener("click", async (event) => {
+      event.target.disabled = true;
+      for (const v of VARIANTS) await runOne(v);
+      event.target.disabled = false;
+    });
+
+    document.querySelector("#copy").addEventListener("click", async (event) => {
+      const lines = [
+        `Device: ${device}`, "",
+        "| Variant | Download | Load | 1st run | Per run (median of 50) | Top-1 = Keras | Top-8 = Keras |",
+        "|---|---|---|---|---|---|---|",
+        ...VARIANTS.filter((v) => results.get(v.id) && results.get(v.id) !== "running").map((v) => {
+          const r = results.get(v.id);
+          return r.error ? `| ${label(v)} | error: ${r.error} | | | | | |`
+            : `| ${label(v)} | ${mb(r.bytes)}${r.cached ? " (some cached)" : ""} | ${ms(r.loadMs)} | ${ms(r.firstMs)} | ${ms(r.medianMs)} | ${r.sameTop1} | ${r.sameTop8} |`;
+        }),
+      ];
+      await navigator.clipboard.writeText(lines.join("\n"));
+      event.target.textContent = "Copied";
+    });
+
+    render();
+  </script>
+</body>
+</html>

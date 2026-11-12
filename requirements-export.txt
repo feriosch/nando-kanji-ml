@@ -1,0 +1,8 @@
+# What `python -m kanji_ml.export` needs on top of requirements.txt, in the same venv:
+# the ONNX converter and the LiteRT and ONNX runtimes it checks the exports with.
+# TensorFlow.js has its own venv: see scripts/setup_tfjs_venv.sh.
+tf2onnx==1.17.0
+onnx==1.23.2
+onnxruntime==1.31.1
+onnxconverter-common==1.16.0
+ai-edge-litert==2.3.0

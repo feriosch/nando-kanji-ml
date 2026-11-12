@@ -94,6 +94,36 @@ The script ends by printing top-1 and top-8 on the test set (20 writers the mode
 |---|---|---|---|---|---|
 | v1 (unreleased) | 99.42% | 99.92% | 59,300 | 24 (best: 19) | With stroke-width augmentation. The first run, without it, scored 99.40% / 99.90%. |
 
+## Export and bench
+
+The app runs the model with one of three browser runtimes: TensorFlow.js, LiteRT.js or ONNX Runtime Web. The bench page in `bench/` decides which one by measuring each on the iPhone 17.
+
+One-time setup, besides the training venv:
+
+```bash
+pip install -r requirements-export.txt
+scripts/setup_tfjs_venv.sh
+```
+
+`scripts/setup_tfjs_venv.sh` creates `.venv-tfjs` for the TensorFlow.js converter. tensorflowjs 4.22, the latest, pins an older TensorFlow and needs a workaround that the script explains.
+
+Then:
+
+```bash
+python -m kanji_ml.export
+```
+
+This writes `bench/models/` and `bench/reference.json`, which aren't in git:
+- `tfjs/`, `kanji.tflite` and `kanji.onnx`, plus a float16 copy of each, which is half the size.
+- Keras's top 8 for every fixture Drawing.
+
+It rebuilds the model in float32 first, because training's mixed precision leaves float16 operations that LiteRT can't run. It also uses a fixed batch of 1. It checks the LiteRT and ONNX exports against Keras. TensorFlow.js only runs in a browser, so the bench page checks that one.
+
+To try the bench locally, serve `bench/` (for example `python -m http.server -d bench`) and open it. For each runtime and backend, in float32 and float16, it shows:
+- the download size (runtime plus model);
+- the load time, the first run, and the median run time;
+- whether the top 1 and top 8 match Keras.
+
 ## Tests
 
 ```bash
