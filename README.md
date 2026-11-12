@@ -124,6 +124,43 @@ To try the bench locally, serve `bench/` (for example `python -m http.server -d 
 - the load time, the first run, and the median run time;
 - whether the top 1 and top 8 match Keras.
 
+The published bench is at https://feriosch.github.io/nando-kanji-ml/, served from the `gh-pages` branch. To update it, re-run the export and copy `bench/` (with `models/` and `reference.json`) to that branch.
+
+### Runtime choice
+
+**The app uses TensorFlow.js 4.22.0 with its WASM backend, and the float16 model.** It was chosen on 2026-11-12 on the Owner's iPhone 17 (Safari 26.6), as #1 asks: the smallest and fastest runtime whose top 8 matches Keras on the fixtures.
+
+v1, iPhone 17, with each runtime recognising the 19 fixture Drawings one at a time:
+
+| Runtime · backend · precision | Download | Per run (median of 50) | 1st run | Top-1 = Keras | Top-8 = Keras |
+|---|---|---|---|---|---|
+| **TensorFlow.js · WASM · float16** | **4.0 MB** | **12 ms** | 25 ms | 19/19 | **19/19** |
+| TensorFlow.js · WASM · float32 | 7.6 MB | 11 ms | 49 ms | 19/19 | 19/19 |
+| TensorFlow.js · WebGL · float16 | 3.9 MB | 1000 ms | 192 ms | 19/19 | 19/19 |
+| TensorFlow.js · WebGL · float32 | 7.4 MB | 1000 ms | 107 ms | 19/19 | 19/19 |
+| ONNX Runtime Web · WASM · float16 | 6.7 MB | 14 ms | 22 ms | 19/19 | 19/19 |
+| ONNX Runtime Web · WASM · float32 | 10.3 MB | 13 ms | 24 ms | 19/19 | 19/19 |
+| ONNX Runtime Web · WebGPU · float16 | 9.5 MB | 4.0 ms | 19 ms | 19/19 | 15/19 |
+| ONNX Runtime Web · WebGPU · float32 | 13.1 MB | 4.0 ms | 20 ms | 19/19 | 19/19 |
+| LiteRT.js · WASM · float16 | 6.1 MB | 16 ms | 32 ms | 19/19 | 19/19 |
+| LiteRT.js · WASM · float32 | 9.6 MB | 16 ms | 23 ms | 19/19 | 19/19 |
+| LiteRT.js · WebGPU · float16 | 6.1 MB | 2.0 ms | 12 ms | 19/19 | 15/19 |
+| LiteRT.js · WebGPU · float32 | 9.6 MB | 3.0 ms | 21 ms | 19/19 | 16/19 |
+
+Versions: TensorFlow.js 4.22.0, ONNX Runtime Web 1.31.1, LiteRT.js 2.6.0. Download is the runtime plus the model, as compressed bytes over the network.
+
+**Why TensorFlow.js on WASM, in float16:**
+- **It's the smallest that matches Keras exactly.** The next smallest is LiteRT.js at 6.1 MB, then ONNX Runtime at 6.7 MB.
+- **It's the fastest on the CPU,** at 12 ms. That's far below anything noticeable when recognising after every stroke.
+- **Float16 halves the model to 3.8 MB** and still matches Keras exactly.
+- **WebGPU is faster (2–4 ms), but the difference can't be felt.** It also reorders Keras's low-probability candidates (ranks 4–8) in all but ONNX's float32 variant, which downloads 13 MB. Top-1 always matched.
+
+**Caveats:**
+- **TensorFlow.js hasn't had a release since October 2024.** LiteRT.js is Google's actively maintained successor (2.6.0, October 2026), at 2.1 MB more and 4 ms slower. If TensorFlow.js ever breaks in Safari, it's the fallback. nando-web#50 puts recognition behind a `Recognizer` seam, so switching would be a contained change.
+- **TensorFlow.js on WebGL took about 1 second per run.** This is likely an artifact of the bench, but it isn't verified. TensorFlow.js waits for the GPU with a timer, and Safari slows timers to once a second in a frame that's out of view, as the bench's frame was. It doesn't change the choice.
+- **Download sizes were measured on the published bench in desktop Chrome,** because Safari reports cached files as 0 bytes. The bytes are the same on any device, except possibly for WebGPU, where Safari may fetch different runtime files.
+- **The iPhone's cold load times aren't in the table.** Most runs reused files from an earlier run. In the app, the service worker caches the runtime and model after the first open (ADR 0005).
+
 ## Tests
 
 ```bash
