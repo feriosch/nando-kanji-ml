@@ -178,9 +178,9 @@ Rebuild it after training:
 python -m kanji_ml.release
 ```
 
-It refuses to write anything unless the model matches Keras's top 8 on every fixture Drawing and the labels match its outputs.
+It refuses to write anything unless the model matches Keras's top 8 on every fixture Drawing, the labels match its outputs, and `models/metrics.json` gives the test accuracy to record.
 
-To ship a version, commit `release/` and push a tag:
+To ship a version, merge `release/` into `main` and tag a commit in `main`:
 
 ```bash
 git tag v1 && git push origin v1
@@ -191,11 +191,11 @@ The `Release` workflow then opens a PR in nando-web, replacing `public/models/ka
 - `fixtures/drawings.json`;
 - a `version.json` holding the tag.
 
-It needs the secret `NANDO_WEB_TOKEN`: a fine-grained token limited to feriosch/nando-web, with *Contents* and *Pull requests* set to read and write. On this repo's PRs that touch the release, the workflow does a dry run without the token.
+It needs the secret `NANDO_WEB_TOKEN`: a fine-grained token limited to feriosch/nando-web, with *Contents* and *Pull requests* set to read and write. If nando-web already has a `kanji-model/<tag>` branch, the workflow stops rather than overwrite it. To release a tag again, close that PR and delete the branch first.
 
-| Version | Model | Runtime |
-|---|---|---|
-| v1 | 99.42% top-1 / 99.92% top-8, float16 (3.8 MB) | LiteRT.js 2.6.0, WASM |
+On this repo's PRs that touch the release, the workflow runs a dry run without the token. It does everything except the push and opening the PR.
+
+Each version's accuracy is in "Results" above, and `release/release.json` records exactly what shipped.
 
 ## Tests
 

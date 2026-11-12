@@ -18,10 +18,10 @@ from pathlib import Path
 
 import tensorflow as tf
 
-from kanji_ml.export import _litert, _litert_scores, check_matches_keras, fixture_inputs, inference_model, top
+from kanji_ml.export import check_matches_keras, fixture_inputs, inference_model, litert_scores, to_litert, top
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNTIME = "@litertjs/core@2.6.0"  # the README's "Runtime choice"
+RUNTIME = "@litertjs/core@2.6.0"  # the README's "Runtime choice"; tests check bench/variants.js pins the same
 ACCELERATOR = "wasm"
 
 
@@ -31,6 +31,8 @@ def build(trained: Path, labels: Path, out: Path, metrics: dict) -> None:
     outputs = model.output_shape[-1]
     if len(names) != outputs:
         raise ValueError(f"{len(names)} labels for a model with {outputs} outputs")
+    if not {"top1", "top8"} <= metrics.keys():
+        raise ValueError("a release records its test accuracy: metrics needs top1 and top8 (from python -m kanji_ml.train)")
 
     out = Path(out)
     building = out.with_name(out.name + ".building")  # swapped in for out only once the model is checked
@@ -39,11 +41,11 @@ def build(trained: Path, labels: Path, out: Path, metrics: dict) -> None:
     work = building / ".saved_model"
     input_shape = (1, *model.input_shape[1:])  # one Drawing at a time
     model.export(work, format="tf_saved_model", verbose=False, input_signature=[tf.TensorSpec(input_shape, tf.float32)])
-    _litert(work, building / "kanji.tflite", float16=True)
+    to_litert(work, building / "kanji.tflite", float16=True)
     shutil.rmtree(work)
 
     _, x = fixture_inputs()
-    check_matches_keras("kanji.tflite", _litert_scores(building / "kanji.tflite", x), top(model.predict(x, verbose=0)))
+    check_matches_keras("kanji.tflite", litert_scores(building / "kanji.tflite", x), top(model.predict(x, verbose=0)))
 
     (building / "labels.json").write_text(json.dumps(names, ensure_ascii=False) + "\n", encoding="utf-8")
     (building / "release.json").write_text(json.dumps({
@@ -51,7 +53,8 @@ def build(trained: Path, labels: Path, out: Path, metrics: dict) -> None:
         "accelerator": ACCELERATOR,
         "input": list(input_shape),
         "classes": outputs,
-        **{k: metrics[k] for k in ("top1", "top8") if k in metrics},
+        "top1": metrics["top1"],
+        "top8": metrics["top8"],
     }, indent=2) + "\n", encoding="utf-8")
     shutil.rmtree(out, ignore_errors=True)
     building.rename(out)

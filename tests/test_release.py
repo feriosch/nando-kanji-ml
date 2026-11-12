@@ -52,3 +52,11 @@ def test_refuses_labels_that_dont_match_the_models_outputs(tmp_path):
 
     with pytest.raises(ValueError, match="9 labels.*10 outputs"):
         release.build(small_trained_model(tmp_path / "kanji.keras"), labels, tmp_path / "release", metrics={})
+
+
+def test_refuses_to_release_without_the_test_accuracy(tmp_path):
+    labels = tmp_path / "labels.json"
+    labels.write_text(json.dumps(KANJI, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="top1.*top8"):
+        release.build(small_trained_model(tmp_path / "kanji.keras"), labels, tmp_path / "release", metrics={"top1": 0.99})

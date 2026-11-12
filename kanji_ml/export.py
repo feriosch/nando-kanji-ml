@@ -71,7 +71,7 @@ def _run(*command: str) -> None:
                            f"{done.stderr.strip()[-3000:]}")
 
 
-def _litert(saved_model: Path, out: Path, float16: bool) -> None:
+def to_litert(saved_model: Path, out: Path, float16: bool) -> None:
     converter = tf.lite.TFLiteConverter.from_saved_model(str(saved_model))
     if float16:
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
@@ -79,7 +79,7 @@ def _litert(saved_model: Path, out: Path, float16: bool) -> None:
     out.write_bytes(converter.convert())
 
 
-def _litert_scores(path: Path, x: np.ndarray) -> np.ndarray:
+def litert_scores(path: Path, x: np.ndarray) -> np.ndarray:
     from ai_edge_litert.interpreter import Interpreter
 
     interpreter = Interpreter(model_path=str(path))
@@ -113,8 +113,8 @@ def _onnx_scores(path: Path, x: np.ndarray) -> np.ndarray:
 
 
 CHECKS = {
-    "kanji.tflite": _litert_scores,
-    "kanji_f16.tflite": _litert_scores,
+    "kanji.tflite": litert_scores,
+    "kanji_f16.tflite": litert_scores,
     "kanji.onnx": _onnx_scores,
     "kanji_f16.onnx": _onnx_scores,
 }
@@ -133,8 +133,8 @@ def export(trained: Path) -> dict[str, dict]:
     names, x = fixture_inputs()
     keras_top = top(model.predict(x, verbose=0))
 
-    _litert(work, building / "kanji.tflite", float16=False)
-    _litert(work, building / "kanji_f16.tflite", float16=True)
+    to_litert(work, building / "kanji.tflite", float16=False)
+    to_litert(work, building / "kanji_f16.tflite", float16=True)
     _onnx(work, building / "kanji.onnx")
     _onnx_float16(building / "kanji.onnx", building / "kanji_f16.onnx")
     if TFJS_CONVERTER.exists():
