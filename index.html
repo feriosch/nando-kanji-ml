@@ -27,7 +27,10 @@
     .bad { color: var(--bad); }
     .error { color: var(--bad); white-space: normal; text-align: left; }
     #device { font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); word-break: break-word; }
-    #runner { width: 100%; height: 120px; border: 1px solid var(--line); border-radius: 10px; margin-top: 12px; background: #fff; }
+    /* Pinned in view: browsers slow down timers in frames scrolled out of sight, which skews timings. */
+    #runner { position: fixed; right: 12px; bottom: 12px; width: 180px; height: 110px; border: 1px solid var(--line);
+              border-radius: 10px; background: #fff; box-shadow: 0 4px 16px rgb(0 0 0 / 0.15); }
+    body { padding-bottom: 140px; }
   </style>
 </head>
 <body>
@@ -62,10 +65,13 @@
     ].join(" · ");
     document.querySelector("#device").textContent = device;
 
+    const escape = (text) => String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
     const label = (v) => `${VERSIONS[v.runtime].split(" ").slice(0, -1).join(" ")} · ${v.backend} · ${v.precision}`;
     const ms = (n) => `${n < 10 ? n.toFixed(1) : Math.round(n)} ms`;
     const mb = (b) => `${(b / 1e6).toFixed(1)} MB`;
     const all = (fraction) => fraction.split("/")[0] === fraction.split("/")[1];
+    // Some cached files report 0 bytes (all of them in Safari), so a total that misses them is a lower bound.
+    const size = (r) => !r.unmeasured ? `${mb(r.bytes)}${r.cached ? " *" : ""}` : r.bytes ? `≥ ${mb(r.bytes)}` : "cached";
 
     function render() {
       rows.innerHTML = "";
@@ -74,12 +80,12 @@
         const tr = document.createElement("tr");
         const cells = !r ? ["", "", "", "", "", ""].map(() => "<td></td>").join("")
           : r === "running" ? `<td colspan="6" style="text-align:left">running…</td>`
-          : r.error ? `<td colspan="6" class="error">${r.error}</td>`
-          : `<td>${mb(r.bytes)}${r.cached ? ` <span title="${r.cached} files came from the cache">*</span>` : ""}</td>
+          : r.error ? `<td colspan="6" class="error">${escape(r.error)}</td>`
+          : `<td title="${r.unmeasured ? `${r.unmeasured} cached files didn't report their size` : r.cached ? `${r.cached} files came from the cache` : ""}">${size(r)}</td>
              <td>${ms(r.loadMs)}</td><td>${ms(r.firstMs)}</td><td>${ms(r.medianMs)}</td>
              <td class="${all(r.sameTop1) ? "ok" : "bad"}">${r.sameTop1}</td>
              <td class="${all(r.sameTop8) ? "ok" : "bad"}">${r.sameTop8}</td>`;
-        tr.innerHTML = `<td>${label(v)}</td>${cells}<td><button data-id="${v.id}">Run</button></td>`;
+        tr.innerHTML = `<td>${escape(label(v))}</td>${cells}<td><button data-id="${v.id}">Run</button></td>`;
         rows.append(tr);
       }
       document.querySelector("#copy").disabled = ![...results.values()].some((r) => r && r !== "running");
@@ -123,7 +129,7 @@
         ...VARIANTS.filter((v) => results.get(v.id) && results.get(v.id) !== "running").map((v) => {
           const r = results.get(v.id);
           return r.error ? `| ${label(v)} | error: ${r.error} | | | | | |`
-            : `| ${label(v)} | ${mb(r.bytes)}${r.cached ? " (some cached)" : ""} | ${ms(r.loadMs)} | ${ms(r.firstMs)} | ${ms(r.medianMs)} | ${r.sameTop1} | ${r.sameTop8} |`;
+            : `| ${label(v)} | ${size(r)}${r.unmeasured ? ` (${r.unmeasured} cached files unmeasured)` : r.cached ? " (some cached)" : ""} | ${ms(r.loadMs)} | ${ms(r.firstMs)} | ${ms(r.medianMs)} | ${r.sameTop1} | ${r.sameTop8} |`;
         }),
       ];
       await navigator.clipboard.writeText(lines.join("\n"));
