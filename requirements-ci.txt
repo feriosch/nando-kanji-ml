@@ -1,0 +1,4 @@
+# What the tests need. CI installs only this: requirements.txt pulls several GB
+# of CUDA packages that are useless without a GPU.
+numpy==2.5.4
+pytest==9.2.0
