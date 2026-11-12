@@ -20,5 +20,7 @@ def test_gives_one_probability_per_kanji_for_each_48x48_image_of_raw_pixels():
     assert (out >= 0).all()
 
 
-def test_has_1_to_2_million_parameters_for_etl9g_so_the_export_is_a_few_mb():
-    assert 1_000_000 <= build_model(classes=2965).count_params() <= 2_000_000
+def test_has_the_1_to_2_million_parameters_adr_0005_plans_for_etl9g():
+    etl9g_kanji = 2965
+
+    assert 1_000_000 <= build_model(classes=etl9g_kanji).count_params() <= 2_000_000

@@ -1,6 +1,8 @@
-"""The shipping gate's measure: top-k accuracy on the ETL9G test set (ADR 0005: ship if top-8 >= 95%)."""
+"""The shipping gate: top-8 accuracy on the ETL9G test set must reach GATE_TOP_8 (ADR 0005)."""
 
 import numpy as np
+
+GATE_TOP_8 = 0.95
 
 
 def top_k_accuracy(scores: np.ndarray, labels: np.ndarray, k: int) -> float:

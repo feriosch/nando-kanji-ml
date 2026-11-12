@@ -18,3 +18,10 @@ def test_top_k_counts_the_samples_whose_label_is_among_the_k_best_guesses():
     assert top_k_accuracy(SCORES, LABELS, 2) == 2 / 3  # the first two
     assert top_k_accuracy(SCORES, LABELS, 3) == 2 / 3  # the third's label is its 4th guess
     assert top_k_accuracy(SCORES, LABELS, 4) == 1.0
+
+
+def test_a_label_tied_at_the_kth_place_counts_as_found():
+    scores = np.array([[0.50, 0.25, 0.25]])  # the label, class 2, ties class 1 for second place
+
+    assert top_k_accuracy(scores, np.array([2]), 2) == 1.0
+    assert top_k_accuracy(scores, np.array([2]), 1) == 0.0
